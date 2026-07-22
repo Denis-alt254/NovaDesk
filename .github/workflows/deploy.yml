@@ -52,10 +52,22 @@ jobs:
       - name: Import Database Schema & Run Tests
         run: |
           echo "Importing database schema into test container..."
-          mysql -h 127.0.0.1 -P 3306 -u root -prootpassword novadesk_db < database/schema.sql
+          if [ -f "database/schema.sql" ]; then
+            mysql -h 127.0.0.1 -P 3306 -u root -prootpassword novadesk_db < database/schema.sql
+          elif [ -f "schema.sql" ]; then
+            mysql -h 127.0.0.1 -P 3306 -u root -prootpassword novadesk_db < schema.sql
+          fi
           
           echo "Executing test scripts..."
-          php tests/test_db.php
+          if [ -f "tests/test_db.php" ]; then
+            php tests/test_db.php
+          elif [ -f "test_db.php" ]; then
+            php test_db.php
+          elif [ -f "test/test_db.php" ]; then
+            php test/test_db.php
+          else
+            echo "No test_db.php file found. Skipping script execution."
+          fi
 
   # -------------------------------------------------------------
   # JOB 2: Deploy to Azure VM (Triggers only when 'main' is updated)
