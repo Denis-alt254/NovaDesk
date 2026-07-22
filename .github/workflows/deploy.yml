@@ -1,0 +1,110 @@
+name: CI/CD Pipeline - Test & Deploy NovaDesk
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # -------------------------------------------------------------
+  # JOB 1: Test Complete Application (PHP Syntax, DB, & Composer)
+  # -------------------------------------------------------------
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+
+    # Ephemeral MySQL 8 instance for isolated unit/integration tests
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: novadesk_db
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, mbstring, json
+          tools: composer
+
+      - name: Install Composer Dependencies (if composer.json exists)
+        run: |
+          if [ -f "composer.json" ]; then
+            composer install --prefer-dist --no-progress --no-suggest
+          else
+            echo "No composer.json found. Skipping Composer dependencies."
+          fi
+
+      - name: Verify PHP Syntax Across Project
+        run: |
+          echo "Linting PHP files..."
+          find . -type f -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+
+      - name: Import Database Schema & Run Tests
+        run: |
+          echo "Importing database schema into test container..."
+          if [ -f "database/schema.sql" ]; then
+            mysql -h 127.0.0.1 -P 3306 -u root -prootpassword novadesk_db < database/schema.sql
+          elif [ -f "schema.sql" ]; then
+            mysql -h 127.0.0.1 -P 3306 -u root -prootpassword novadesk_db < schema.sql
+          fi
+          
+          echo "Executing test scripts..."
+          if [ -f "tests/test_db.php" ]; then
+            php tests/test_db.php
+          elif [ -f "test_db.php" ]; then
+            php test_db.php
+          elif [ -f "test/test_db.php" ]; then
+            php test/test_db.php
+          else
+            echo "No test_db.php file found. Skipping script execution."
+          fi
+
+  # -------------------------------------------------------------
+  # JOB 2: Deploy to Azure VM (Triggers only when 'main' is updated)
+  # -------------------------------------------------------------
+  deploy:
+    name: Deploy to Azure VM
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Sync Project Files to Azure VM via RSYNC over SSH
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.VM_HOST }}
+          REMOTE_USER: ${{ secrets.VM_USERNAME }}
+          REMOTE_PORT: ${{ secrets.VM_PORT }}
+          TARGET: "/opt/lampp/htdocs/NovaDesk"
+          EXCLUDE: "/.git/, /.github/, /tests/, README.md, .gitignore"
+          SCRIPT_AFTER: |
+            echo "------------------------------------------------"
+            echo "Running post-deployment tasks on Azure VM..."
+            
+            # 1. Enforce correct file ownership for XAMPP
+            sudo chown -R ravi:ravi /opt/lampp/htdocs/NovaDesk
+            sudo chmod -R 755 /opt/lampp/htdocs/NovaDesk
+            
+            # 2. Automatically apply/update database migrations on VM
+            if [ -f "/opt/lampp/htdocs/NovaDesk/database/schema.sql" ]; then
+              /opt/lampp/bin/mysql -u root -e "CREATE DATABASE IF NOT EXISTS novadesk_db;"
+              /opt/lampp/bin/mysql -u root novadesk_db < /opt/lampp/htdocs/NovaDesk/database/schema.sql
+              echo "✓ Database updated successfully."
+            fi
+            
+            echo "✓ NovaDesk deployment complete!"
+            echo "------------------------------------------------"
