@@ -1,0 +1,172 @@
+:root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --text-dark: #0f172a;
+    --text-muted: #64748b;
+    --bg-light: #f8fafc;
+    --card-bg: #ffffff;
+    --border-color: #e2e8f0;
+    --badge-bg: #e0e7ff;
+    --badge-text: #3730a3;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--bg-light);
+    color: var(--text-dark);
+}
+
+.pricing-section {
+    padding: 60px 20px;
+    min-height: 100vh;
+}
+
+.pricing-header {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto 50px;
+}
+
+.pricing-header h2 {
+    font-size: 2.2rem;
+    color: var(--text-dark);
+    margin-bottom: 12px;
+}
+
+.pricing-header p {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+}
+
+/* Responsive Grid Layout */
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+    align-items: stretch;
+}
+
+/* Individual Package Card */
+.package-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 30px 25px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.package-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 20px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Category Badge */
+.category-badge {
+    display: inline-block;
+    align-self: flex-start;
+    background: var(--badge-bg);
+    color: var(--badge-text);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 5px 12px;
+    border-radius: 20px;
+    margin-bottom: 15px;
+}
+
+.package-title {
+    font-size: 1.4rem;
+    color: var(--text-dark);
+    margin-bottom: 12px;
+}
+
+.package-price {
+    margin-bottom: 20px;
+}
+
+.package-price .currency {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    vertical-align: top;
+}
+
+.package-price .amount {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: var(--text-dark);
+}
+
+.package-price .cycle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    display: block;
+    margin-top: -2px;
+}
+
+/* Timeline Pill */
+.package-timeline {
+    font-size: 0.88rem;
+    color: #334155;
+    background: #f1f5f9;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border-left: 3px solid var(--primary);
+}
+
+.package-timeline strong {
+    color: var(--text-dark);
+}
+
+/* Description Text */
+.package-description {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 25px;
+    flex-grow: 1; /* Pushes action button to bottom evenly */
+    white-space: pre-line; /* Preserves line breaks in description */
+}
+
+/* Action Button */
+.btn-package {
+    display: block;
+    text-align: center;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    background: var(--primary);
+    color: white;
+    transition: background 0.2s ease;
+}
+
+.btn-package:hover {
+    background: var(--primary-hover);
+}
+
+.alert-error {
+    text-align: center;
+    color: #ef4444;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 12px;
+    border-radius: 8px;
+    max-width: 500px;
+    margin: 0 auto;
+}
