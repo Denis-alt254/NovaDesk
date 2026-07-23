@@ -1,6 +1,9 @@
 <?php
 // includes/auth.php
 
+// Top of includes/auth.php or index bootstrap
+require_once __DIR__ . '/security.php';
+
 if (session_status() === PHP_SESSION_NONE) {
     // Configure secure session cookie parameters
     session_set_cookie_params([
