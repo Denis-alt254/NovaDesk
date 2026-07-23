@@ -1,12 +1,7 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-// Redirect if user is already logged in
 if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
     header('Location: ../dashboard.php');
     exit();
@@ -15,36 +10,25 @@ if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $identifier = trim($_POST['identifier'] ?? ''); // Username or Email
+    $identifier = trim($_POST['identifier'] ?? '');
     $password   = $_POST['password'] ?? '';
 
     if (empty($identifier) || empty($password)) {
-        $error = "Please fill in all fields.";
+        $error = "Please fill in all required fields.";
     } else {
         try {
-
-            // Get the PDO instance from your Database singleton
-            $pdo = Database::getInstance()->getConnection();
-            
-            // Query using distinct parameter names for email and username
-            $stmt = $pdo->prepare("SELECT id, username, email, password FROM users WHERE email = :email OR username = :username LIMIT 1");
-
-            // Execute with matching key-value pairs
-            $stmt->execute([
-                'email'    => $identifier,
-                'username' => $identifier
-            ]);
-
+            $stmt = Database::getInstance()->runQuery(
+                "SELECT id, username, email, password FROM users WHERE email = :email OR username = :username LIMIT 1",
+                ['email' => $identifier, 'username' => $identifier]
+            );
             $user = $stmt->fetch();
 
-            // Verify Bcrypt Hash
             if ($user && password_verify($password, $user['password'])) {
                 regenerate_secure_session([
                     'user_id'  => $user['id'],
                     'username' => $user['username'],
                     'email'    => $user['email']
                 ]);
-
                 header('Location: ../dashboard.php');
                 exit();
             } else {
@@ -52,51 +36,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (PDOException $e) {
             error_log($e->getMessage());
-            $error = "Database Error: " . $e->getMessage();
+            $error = "A system error occurred. Please try again later.";
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NovaDesk - Login</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; padding-top: 50px; }
-        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #28a745; border: none; color: white; font-size: 16px; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #218838; }
-        .alert-error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
-    </style>
+    <link rel="stylesheet" href="../assets/css/auth.css">
 </head>
 <body>
 
-<div class="card">
-    <h2>NovaDesk Login</h2>
+<div class="auth-card">
+    <div class="auth-header">
+        <h2>Welcome Back</h2>
+        <p>Sign in to your NovaDesk account</p>
+    </div>
 
     <?php if (!empty($error)): ?>
         <div class="alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <form action="login.php" method="POST">
+    <form id="loginForm" action="login.php" method="POST" novalidate>
         <div class="form-group">
             <label for="identifier">Username or Email</label>
-            <input type="text" id="identifier" name="identifier" value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>" required>
+            <input type="text" id="identifier" name="identifier" value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>" placeholder="e.g. john or john@example.com" required>
+            <div class="field-error" id="identifier_err">Please enter your username or email.</div>
         </div>
 
         <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" placeholder="••••••••" required>
+                <span class="toggle-eye" onclick="togglePasswordVisibility('password', this)">👁️</span>
+            </div>
+            <div class="field-error" id="password_err">Please enter your password.</div>
         </div>
 
-        <button type="submit">Sign In</button>
+        <button type="submit" class="btn-submit">Sign In</button>
     </form>
+
+    <div class="toggle-container">
+        Don't have an account? <a href="register.php" class="toggle-btn">Create Account</a>
+    </div>
 </div>
+
+<script>
+    function togglePasswordVisibility(inputId, eyeBtn) {
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+            input.type = 'text';
+            eyeBtn.textContent = '🙈';
+        } else {
+            input.type = 'password';
+            eyeBtn.textContent = '👁️';
+        }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+        let valid = true;
+        
+        document.querySelectorAll('.field-error').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('input').forEach(el => el.classList.remove('invalid'));
+
+        const id = document.getElementById('identifier');
+        const pass = document.getElementById('password');
+
+        if (!id.value.trim()) {
+            id.classList.add('invalid');
+            document.getElementById('identifier_err').style.display = 'block';
+            valid = false;
+        }
+
+        if (!pass.value) {
+            pass.classList.add('invalid');
+            document.getElementById('password_err').style.display = 'block';
+            valid = false;
+        }
+
+        if (!valid) e.preventDefault();
+    });
+</script>
 
 </body>
 </html>
