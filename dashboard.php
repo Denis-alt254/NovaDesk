@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/config/db.php';
-require_once __DIR__ . '/includes/security.php'; // Includes e() for output escaping
+require_once __DIR__ . '/includes/security.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -13,15 +13,15 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 }
 
 $db = Database::getInstance();
-$userId = $_SESSION['user_id'];
+$userId = (int)$_SESSION['user_id'];
 $requests = [];
 $error = '';
 
-// Check for successful submission redirect
+// Check for successful submission notification flag
 $showSuccessMessage = isset($_GET['request_submitted']) && $_GET['request_submitted'] == 1;
 
 try {
-    // 2. Fetch all consultation requests for the logged-in client (joining package details if applicable)
+    // 2. Fetch all consultation requests owned by the authenticated client
     $stmt = $db->runQuery(
         "SELECT 
             cr.id, 
@@ -44,7 +44,7 @@ try {
     $error = "Unable to retrieve your consultation requests at this time.";
 }
 
-// Helper to map status to CSS badge class
+// Helper to assign CSS badge classes based on status
 function getStatusBadgeClass(string $status): string {
     switch ($status) {
         case 'In Review':  return 'badge-in-review';
@@ -56,10 +56,10 @@ function getStatusBadgeClass(string $status): string {
     }
 }
 
-// Metric counters
-$totalRequests = count($requests);
-$pendingCount  = count(array_filter($requests, fn($r) => $r['status'] === 'Pending'));
-$activeCount   = count(array_filter($requests, fn($r) => in_array($r['status'], ['In Review', 'Quoted'])));
+// Metric Counters
+$totalRequests  = count($requests);
+$pendingCount   = count(array_filter($requests, fn($r) => $r['status'] === 'Pending'));
+$activeCount    = count(array_filter($requests, fn($r) => in_array($r['status'], ['In Review', 'Quoted'])));
 $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Completed'));
 ?>
 <!DOCTYPE html>
@@ -69,6 +69,29 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Client Dashboard - NovaDesk</title>
     <link rel="stylesheet" href="assets/css/dashboard.css">
+    <style>
+        /* Additional row-link styling for high scanability */
+        .data-table tbody tr {
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+        .data-table tbody tr:hover {
+            background-color: #f1f5f9;
+        }
+        .request-link {
+            color: var(--primary);
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .request-link:hover {
+            text-decoration: underline;
+        }
+        .action-link {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+    </style>
 </head>
 <body>
 
@@ -136,13 +159,20 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
                             <th>Selected Package</th>
                             <th>Submitted Date</th>
                             <th>Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($requests as $req): ?>
-                            <tr>
-                                <td><strong>#<?= e(str_pad($req['id'], 5, '0', STR_PAD_LEFT)) ?></strong></td>
-                                <td><?= e($req['subject']) ?></td>
+                            <tr onclick="window.location.href='view-request.php?id=<?= e_attr($req['id']) ?>'">
+                                <td>
+                                    <a href="view-request.php?id=<?= e_attr($req['id']) ?>" class="request-link">
+                                        #<?= e(str_pad($req['id'], 5, '0', STR_PAD_LEFT)) ?>
+                                    </a>
+                                </td>
+                                <td>
+                                    <strong><?= e($req['subject']) ?></strong>
+                                </td>
                                 <td><?= e($req['service_type']) ?></td>
                                 <td><?= e($req['package_title'] ?? 'Custom Request') ?></td>
                                 <td><?= e(date('M j, Y', strtotime($req['submitted_at']))) ?></td>
@@ -150,6 +180,11 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
                                     <span class="badge <?= e(getStatusBadgeClass($req['status'])) ?>">
                                         <?= e($req['status']) ?>
                                     </span>
+                                </td>
+                                <td>
+                                    <a href="view-request.php?id=<?= e_attr($req['id']) ?>" class="action-link">
+                                        View Details →
+                                    </a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
