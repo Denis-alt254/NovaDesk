@@ -1,16 +1,10 @@
 <?php
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/security.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// 1. Authenticate User
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: auth/login.php');
-    exit();
-}
+// 1. Enforce Authentication Middleware
+require_auth();
 
 $db = Database::getInstance();
 $errors = [];
@@ -29,72 +23,75 @@ try {
     $packages = [];
 }
 
-// Capture package_id if pre-selected via query string (e.g., request-service.php?package_id=1)
+// Capture package_id if pre-selected via query string
 $selectedPackageId = (int)($_GET['package_id'] ?? $_POST['package_id'] ?? 0);
 
 // 4. Handle POST Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $packageId   = !empty($_POST['package_id']) ? (int)$_POST['package_id'] : null;
-    $clientName  = trim($_POST['client_name'] ?? '');
-    $clientEmail = trim($_POST['client_email'] ?? '');
-    $subject     = trim($_POST['subject'] ?? '');
-    $serviceType = trim($_POST['service_type'] ?? '');
-    $message     = trim($_POST['message'] ?? '');
-
-    // Server-Side Strict Validation
-    if (empty($clientName)) {
-        $errors[] = "Client name is required.";
-    }
-
-    if (empty($clientEmail) || !filter_var($clientEmail, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "Please provide a valid email address.";
-    }
-
-    if (empty($subject) || strlen($subject) < 3 || strlen($subject) > 150) {
-        $errors[] = "Subject is required (max 150 characters).";
-    }
-
-    if (empty($serviceType)) {
-        $errors[] = "Please specify a service type/category.";
-    }
-
-    if (empty($message) || strlen($message) < 15) {
-        $errors[] = "Please provide a detailed message (minimum 15 characters).";
-    }
-
-    // Validate Package ID if provided
-    if (!is_null($packageId) && $packageId > 0) {
-        $checkPkg = $db->runQuery("SELECT id FROM service_packages WHERE id = :id AND is_active = 1 LIMIT 1", ['id' => $packageId]);
-        if (!$checkPkg->fetch()) {
-            $packageId = null; // Reset to NULL if invalid
-        }
+    // CSRF Token Check
+    if (!verify_csrf_token()) {
+        $errors[] = "Invalid or expired session token. Please reload and try again.";
     } else {
-        $packageId = null;
-    }
+        // Run Centralized Input Validator
+        $validator = validateInput();
 
-    // Insert into consultation_requests table
-    if (empty($errors)) {
-        try {
-            $db->runQuery(
-                "INSERT INTO consultation_requests (user_id, package_id, client_name, client_email, subject, service_type, message, status, submitted_at) 
-                 VALUES (:user_id, :package_id, :client_name, :client_email, :subject, :service_type, :message, 'Pending', NOW())",
-                [
-                    'user_id'      => $userId,
-                    'package_id'   => $packageId,
-                    'client_name'  => $clientName,
-                    'client_email' => $clientEmail,
-                    'subject'      => $subject,
-                    'service_type' => $serviceType,
-                    'message'      => $message
-                ]
-            );
+        $validator->required([
+            'client_name'  => 'Client name',
+            'client_email' => 'Email address',
+            'subject'      => 'Subject',
+            'service_type' => 'Service category',
+            'message'      => 'Project scope details'
+        ])
+        ->maxLength('client_name', 100)
+        ->email('client_email')
+        ->maxLength('client_email', 150)
+        ->minLength('subject', 3)
+        ->maxLength('subject', 150)
+        ->minLength('message', 15);
 
-            // Redirect on success
-            header('Location: dashboard.php?request_submitted=1');
-            exit();
-        } catch (PDOException $e) {
-            error_log($e->getMessage());
-            $errors[] = "A system error occurred while submitting your consultation request.";
+        if ($validator->isValid()) {
+            $clientName  = $validator->get('client_name');
+            $clientEmail = $validator->get('client_email');
+            $subject     = $validator->get('subject');
+            $serviceType = $validator->get('service_type');
+            $message     = $validator->get('message');
+
+            // Optional Package Validation
+            $packageId = !empty($_POST['package_id']) ? (int)$_POST['package_id'] : null;
+            if (!is_null($packageId) && $packageId > 0) {
+                $checkPkg = $db->runQuery("SELECT id FROM service_packages WHERE id = :id AND is_active = 1 LIMIT 1", ['id' => $packageId]);
+                if (!$checkPkg->fetch()) {
+                    $packageId = null;
+                }
+            } else {
+                $packageId = null;
+            }
+
+            // Insert into consultation_requests table
+            try {
+                $db->runQuery(
+                    "INSERT INTO consultation_requests (user_id, package_id, client_name, client_email, subject, service_type, message, status, submitted_at) 
+                     VALUES (:user_id, :package_id, :client_name, :client_email, :subject, :service_type, :message, 'Pending', NOW())",
+                    [
+                        'user_id'      => $userId,
+                        'package_id'   => $packageId,
+                        'client_name'  => $clientName,
+                        'client_email' => $clientEmail,
+                        'subject'      => $subject,
+                        'service_type' => $serviceType,
+                        'message'      => $message
+                    ]
+                );
+
+                // Redirect on success
+                header('Location: dashboard.php?request_submitted=1');
+                exit();
+            } catch (PDOException $e) {
+                error_log($e->getMessage());
+                $errors[] = "A system error occurred while submitting your consultation request.";
+            }
+        } else {
+            $errors = $validator->getErrors();
         }
     }
 }
@@ -106,6 +103,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Request Consultation - NovaDesk</title>
     <link rel="stylesheet" href="assets/css/request.css">
+    <style>
+        .form-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .btn-cancel {
+            display: inline-block;
+            padding: 12px 20px;
+            background-color: #f3f4f6;
+            color: #4b5563;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            text-align: center;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        .btn-cancel:hover {
+            background-color: #e5e7eb;
+            color: #1f2937;
+        }
+    </style>
 </head>
 <body>
 
@@ -125,7 +145,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     <?php endif; ?>
 
-    <form action="request-service.php" method="POST" novalidate>
+    <form id="requestForm" action="request-service.php" method="POST" novalidate>
+        <!-- CSRF Token Hidden Field -->
+        <input type="hidden" name="csrf_token" value="<?= e_attr($_SESSION['session_token'] ?? '') ?>">
+
         <!-- Service Package (Optional / Pre-selectable) -->
         <div class="form-group">
             <label for="package_id">Service Package (Optional)</label>
@@ -182,9 +205,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       placeholder="Outline your project scope, features required, target timeline, or technical details..." required><?= e($_POST['message'] ?? '') ?></textarea>
         </div>
 
-        <button type="submit" class="btn-submit">Submit Consultation Request</button>
+        <!-- Action Buttons -->
+        <div class="form-actions">
+            <button type="submit" class="btn-submit">Submit Consultation Request</button>
+            <a href="dashboard.php" class="btn-cancel" id="cancelBtn">Cancel</a>
+        </div>
     </form>
 </div>
+
+<script>
+    // Prompt confirmation if user has started filling out subject or message before cancelling
+    document.getElementById('cancelBtn').addEventListener('click', function (e) {
+        const subject = document.getElementById('subject').value.trim();
+        const message = document.getElementById('message').value.trim();
+
+        if (subject !== '' || message !== '') {
+            if (!confirm('Are you sure you want to cancel? Any unsaved changes will be lost.')) {
+                e.preventDefault();
+            }
+        }
+    });
+</script>
 
 </body>
 </html>

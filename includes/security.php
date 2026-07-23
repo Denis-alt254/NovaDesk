@@ -1,11 +1,13 @@
 <?php
 // includes/security.php
 
+require_once __DIR__ . '/Validator.php';
+
 /**
  * Safely encodes input strings for HTML context to prevent XSS payloads.
  *
  * @param mixed $value String, array, or scalar value to encode.
- * @param string $encoding Character set (default: UTF-8).
+ * @string $encoding Character set (default: UTF-8).
  * @return mixed Safe HTML output.
  */
 function e($value, string $encoding = 'UTF-8') {
@@ -56,4 +58,15 @@ function e_attr($value): string {
  */
 function e_js($value): string {
     return json_encode($value, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+}
+
+/**
+ * Centralized helper function to initialize the POST Input Validator.
+ * Automatically trims whitespace and strips non-printable control characters.
+ *
+ * @param array|null $data Custom input data (defaults to $_POST if null)
+ * @return Validator
+ */
+function validateInput(?array $data = null): Validator {
+    return new Validator($data);
 }

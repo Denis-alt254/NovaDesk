@@ -1,24 +1,19 @@
 <?php
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/security.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// 1. Authenticate Client
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header('Location: auth/login.php');
-    exit();
-}
+// 1. Enforce Authentication Middleware
+require_auth();
 
 $db = Database::getInstance();
 $userId = (int)$_SESSION['user_id'];
 $requests = [];
 $error = '';
 
-// Check for successful submission notification flag
-$showSuccessMessage = isset($_GET['request_submitted']) && $_GET['request_submitted'] == 1;
+// Check for URL notification flags
+$showSuccessMessage   = isset($_GET['request_submitted']) && $_GET['request_submitted'] == 1;
+$showCancelledMessage = isset($_GET['request_cancelled']) && $_GET['request_cancelled'] == 1;
 
 try {
     // 2. Fetch all consultation requests owned by the authenticated client
@@ -79,17 +74,45 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
             background-color: #f1f5f9;
         }
         .request-link {
-            color: var(--primary);
+            color: var(--primary, #4f46e5);
             font-weight: 700;
             text-decoration: none;
         }
         .request-link:hover {
             text-decoration: underline;
         }
+        .action-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
         .action-link {
             font-size: 0.85rem;
-            color: var(--text-muted);
+            color: var(--text-muted, #6b7280);
             font-weight: 600;
+            text-decoration: none;
+        }
+        .action-link:hover {
+            color: var(--primary, #4f46e5);
+        }
+        .btn-cancel-sm {
+            padding: 4px 10px;
+            background-color: #fee2e2;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .btn-cancel-sm:hover {
+            background-color: #dc2626;
+            color: #ffffff;
+        }
+        .badge-cancelled {
+            background-color: #f3f4f6;
+            color: #6b7280;
         }
     </style>
 </head>
@@ -101,7 +124,7 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
     <header class="dashboard-header">
         <div>
             <h1>Client Portal</h1>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">Welcome back, <strong><?= e($_SESSION['username'] ?? 'Client') ?></strong></p>
+            <p style="color: var(--text-muted, #6b7280); font-size: 0.9rem;">Welcome back, <strong><?= e($_SESSION['username'] ?? 'Client') ?></strong></p>
         </div>
         <div class="header-actions">
             <a href="request-service.php" class="btn btn-primary">+ New Request</a>
@@ -113,6 +136,12 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
     <?php if ($showSuccessMessage): ?>
         <div class="alert-success">
             ✓ Your consultation request has been successfully submitted! Our team will review it shortly.
+        </div>
+    <?php endif; ?>
+
+    <?php if ($showCancelledMessage): ?>
+        <div class="alert-success" style="background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca;">
+            ✓ Your consultation request has been cancelled.
         </div>
     <?php endif; ?>
 
@@ -182,9 +211,19 @@ $completedCount = count(array_filter($requests, fn($r) => $r['status'] === 'Comp
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="view-request.php?id=<?= e_attr($req['id']) ?>" class="action-link">
-                                        View Details →
-                                    </a>
+                                    <div class="action-cell">
+                                        <a href="view-request.php?id=<?= e_attr($req['id']) ?>" class="action-link" onclick="event.stopPropagation();">
+                                            View Details →
+                                        </a>
+
+                                        <?php if ($req['status'] === 'Pending'): ?>
+                                            <form action="cancel-request.php" method="POST" style="display:inline;" onclick="event.stopPropagation();" onsubmit="return confirm('Are you sure you want to cancel this consultation request?');">
+                                                <input type="hidden" name="csrf_token" value="<?= e_attr($_SESSION['session_token'] ?? '') ?>">
+                                                <input type="hidden" name="request_id" value="<?= e_attr($req['id']) ?>">
+                                                <button type="submit" class="btn-cancel-sm">Cancel</button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

@@ -1,7 +1,6 @@
 <?php
 // includes/auth.php
 
-// Top of includes/auth.php or index bootstrap
 require_once __DIR__ . '/security.php';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -10,7 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
         'lifetime' => 0,              // Session lasts until browser closes
         'path'     => '/',
         'domain'   => '',
-        'secure'   => isset($_SERVER['HTTPS']), // True if using HTTPS
+        'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on', // True if using HTTPS
         'httponly' => true,           // Mitigate XSS attacks
         'samesite' => 'Lax'           // Protect against CSRF
     ]);
@@ -35,10 +34,31 @@ function regenerate_secure_session(array $userData = []): void {
 }
 
 /**
+ * Validates CSRF token from input requests (POST or headers).
+ * 
+ * @param Validator|null $validator
+ * @return bool
+ */
+function verify_csrf_token(?Validator $validator = null): bool {
+    if (empty($_SESSION['session_token'])) {
+        return false;
+    }
+
+    $token = '';
+    if ($validator !== null) {
+        $token = $validator->get('csrf_token', '');
+    } elseif (isset($_POST['csrf_token'])) {
+        $token = $_POST['csrf_token'];
+    }
+
+    return hash_equals($_SESSION['session_token'], $token);
+}
+
+/**
  * Auth Middleware: Requires authentication to view protected pages.
  */
 function require_auth(): void {
-    // Session expiration check (e.g., 30 minutes of inactivity)
+    // Session expiration check (30 minutes of inactivity)
     $maxInactivity = 1800; // 30 mins
     if (isset($_SESSION['last_active']) && (time() - $_SESSION['last_active'] > $maxInactivity)) {
         logout_user();
