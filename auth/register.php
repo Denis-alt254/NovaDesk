@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/security.php';
 
 if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
     header('Location: ../dashboard.php');
@@ -10,15 +11,26 @@ if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $email    = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
+    // 1. Run Centralized Validator (sanitizes control characters and trims inputs)
+    $validator = validateInput();
 
-    if (empty($username) || empty($email) || empty($password)) {
-        $error = "All fields are required.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Please provide a valid email address.";
-    } else {
+    $validator->required([
+        'username' => 'Username',
+        'email'    => 'Email Address',
+        'password' => 'Password'
+    ])
+    ->minLength('username', 3)
+    ->maxLength('username', 50)
+    ->email('email')
+    ->maxLength('email', 150)
+    ->minLength('password', 8)
+    ->maxLength('password', 255);
+
+    if ($validator->isValid()) {
+        $username = $validator->get('username');
+        $email    = $validator->get('email');
+        $password = $validator->get('password');
+
         try {
             $db = Database::getInstance();
             
@@ -56,6 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log($e->getMessage());
             $error = "A system error occurred. Please try again later.";
         }
+    } else {
+        $error = $validator->getFirstError();
     }
 }
 ?>
@@ -76,19 +90,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <?php if (!empty($error)): ?>
-        <div class="alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert-error"><?= e($error) ?></div>
     <?php endif; ?>
 
     <form id="registerForm" action="register.php" method="POST" novalidate>
         <div class="form-group">
             <label for="username">Username</label>
-            <input type="text" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" placeholder="e.g. johndoe" required>
+            <input type="text" id="username" name="username" value="<?= e_attr($_POST['username'] ?? '') ?>" placeholder="e.g. johndoe" required>
             <div class="field-error" id="username_err">Username must be at least 3 characters.</div>
         </div>
 
         <div class="form-group">
             <label for="email">Email Address</label>
-            <input type="email" id="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" placeholder="name@example.com" required>
+            <input type="email" id="email" name="email" value="<?= e_attr($_POST['email'] ?? '') ?>" placeholder="name@example.com" required>
             <div class="field-error" id="email_err">Please enter a valid email address.</div>
         </div>
 

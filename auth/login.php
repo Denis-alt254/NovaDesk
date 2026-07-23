@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/security.php';
 
 if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
     header('Location: ../dashboard.php');
@@ -10,12 +11,20 @@ if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $identifier = trim($_POST['identifier'] ?? '');
-    $password   = $_POST['password'] ?? '';
+    // 1. Run Centralized Validator (sanitizes control characters and trims string inputs)
+    $validator = validateInput();
 
-    if (empty($identifier) || empty($password)) {
-        $error = "Please fill in all required fields.";
-    } else {
+    $validator->required([
+        'identifier' => 'Username or Email',
+        'password'   => 'Password'
+    ])
+    ->maxLength('identifier', 150)
+    ->maxLength('password', 255);
+
+    if ($validator->isValid()) {
+        $identifier = $validator->get('identifier');
+        $password   = $validator->get('password');
+
         try {
             $stmt = Database::getInstance()->runQuery(
                 "SELECT id, username, email, password FROM users WHERE email = :email OR username = :username LIMIT 1",
@@ -38,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log($e->getMessage());
             $error = "A system error occurred. Please try again later.";
         }
+    } else {
+        $error = $validator->getFirstError();
     }
 }
 ?>
@@ -58,13 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <?php if (!empty($error)): ?>
-        <div class="alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert-error"><?= e($error) ?></div>
     <?php endif; ?>
 
     <form id="loginForm" action="login.php" method="POST" novalidate>
         <div class="form-group">
             <label for="identifier">Username or Email</label>
-            <input type="text" id="identifier" name="identifier" value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>" placeholder="e.g. john or john@example.com" required>
+            <input type="text" id="identifier" name="identifier" value="<?= e_attr($_POST['identifier'] ?? '') ?>" placeholder="e.g. john or john@example.com" required>
             <div class="field-error" id="identifier_err">Please enter your username or email.</div>
         </div>
 
