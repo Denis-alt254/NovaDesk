@@ -1,134 +1,176 @@
 <?php
-// Enable error reporting during development
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-session_start();
-
-// 1. Require your Database Singleton class
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-// 2. Obtain the PDO connection instance from the Singleton
-$db = Database::getInstance();
-$pdo = $db->getConnection();
+if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    header('Location: ../dashboard.php');
+    exit();
+}
 
-$errors = [];
-$success = '';
+$error = '';
 
-// Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // 1. Sanitize Inputs
     $username = trim($_POST['username'] ?? '');
-    $email    = filter_var(trim($_POST['email'] ?? ''), FILTER_SANITIZE_EMAIL);
+    $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    // 2. Validate Inputs
-    if (empty($username)) {
-        $errors[] = "Username is required.";
-    }
-
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "A valid email address is required.";
-    }
-
-    // 3. Enforce Strong Password Policy (8+ chars, Uppercase, Lowercase, Number, Special char)
-    $passwordPattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/';
-    if (!preg_match($passwordPattern, $password)) {
-        $errors[] = "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
-    }
-
-    // 4. Save to Database if Validation Passes
-    if (empty($errors)) {
+    if (empty($username) || empty($email) || empty($password)) {
+        $error = "All fields are required.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = "Please provide a valid email address.";
+    } else {
         try {
-            // Check for existing user using your Database class helper or raw PDO
-            $stmt = $pdo->prepare("SELECT id FROM users WHERE email = :email OR username = :username LIMIT 1");
-            $stmt->execute(['email' => $email, 'username' => $username]);
+            $db = Database::getInstance();
+            
+            // Check for duplicate username or email
+            $checkStmt = $db->runQuery(
+                "SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1",
+                ['username' => $username, 'email' => $email]
+            );
 
-            if ($stmt->fetch()) {
-                $errors[] = "Username or Email is already registered.";
+            if ($checkStmt->fetch()) {
+                $error = "Username or Email is already taken.";
             } else {
-                // Hash Password using bcrypt
-                $hashedPassword = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+                $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+                
+                $db->runQuery(
+                    "INSERT INTO users (username, email, password, created_at) VALUES (:username, :email, :password, NOW())",
+                    ['username' => $username, 'email' => $email, 'password' => $hashedPassword]
+                );
 
-                // Insert into Database
-                $insertStmt = $pdo->prepare("INSERT INTO users (username, email, password, created_at) VALUES (:username, :email, :password, NOW())");
-                $insertStmt->execute([
+                // Fetch new user ID
+                $newUserId = $db->getConnection()->lastInsertId();
+
+                // Auto-login user and establish secure session
+                regenerate_secure_session([
+                    'user_id'  => $newUserId,
                     'username' => $username,
-                    'email'    => $email,
-                    'password' => $hashedPassword
+                    'email'    => $email
                 ]);
 
-                $success = "Registration successful! You can now log in.";
+                // Redirect directly to dashboard
+                header('Location: ../dashboard.php');
+                exit();
             }
         } catch (PDOException $e) {
             error_log($e->getMessage());
-            $errors[] = "Database error: " . $e->getMessage();
+            $error = "A system error occurred. Please try again later.";
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NovaDesk - Register</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; padding-top: 50px; }
-        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #007bff; border: none; color: white; font-size: 16px; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .alert-error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
-        .alert-success { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
-        ul { margin: 0; padding-left: 20px; }
-    </style>
+    <link rel="stylesheet" href="../assets/css/auth.css">
 </head>
 <body>
 
-<div class="card">
-    <h2>NovaDesk Registration</h2>
+<div class="auth-card">
+    <div class="auth-header">
+        <h2>Create an Account</h2>
+        <p>Join NovaDesk to manage your dashboard</p>
+    </div>
 
-    <?php if (!empty($errors)): ?>
-        <div class="alert-error">
-            <ul>
-                <?php foreach ($errors as $error): ?>
-                    <li><?= htmlspecialchars($error) ?></li>
-                <?php endforeach; ?>
-            </ul>
-        </div>
+    <?php if (!empty($error)): ?>
+        <div class="alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <?php if ($success): ?>
-        <div class="alert-success">
-            <?= htmlspecialchars($success) ?>
-        </div>
-    <?php endif; ?>
-
-    <form action="register.php" method="POST">
+    <form id="registerForm" action="register.php" method="POST" novalidate>
         <div class="form-group">
             <label for="username">Username</label>
-            <input type="text" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+            <input type="text" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" placeholder="e.g. johndoe" required>
+            <div class="field-error" id="username_err">Username must be at least 3 characters.</div>
         </div>
 
         <div class="form-group">
             <label for="email">Email Address</label>
-            <input type="email" id="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required>
+            <input type="email" id="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" placeholder="name@example.com" required>
+            <div class="field-error" id="email_err">Please enter a valid email address.</div>
         </div>
 
         <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-            <small style="color: #666;">Min 8 characters (uppercase, lowercase, number, special char)</small>
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" placeholder="••••••••" required>
+                <span class="toggle-eye" onclick="togglePasswordVisibility('password', this)">👁️</span>
+            </div>
+            <div class="field-error" id="password_err">Must be 8+ chars with upper, lower, number & special char.</div>
         </div>
 
-        <button type="submit">Create Account</button>
+        <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <div class="password-wrapper">
+                <input type="password" id="confirm_password" placeholder="••••••••" required>
+                <span class="toggle-eye" onclick="togglePasswordVisibility('confirm_password', this)">👁️</span>
+            </div>
+            <div class="field-error" id="confirm_password_err">Passwords do not match.</div>
+        </div>
+
+        <button type="submit" class="btn-submit">Register & Continue</button>
     </form>
+
+    <div class="toggle-container">
+        Already have an account? <a href="login.php" class="toggle-btn">Sign In</a>
+    </div>
 </div>
+
+<script>
+    function togglePasswordVisibility(inputId, eyeBtn) {
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+            input.type = 'text';
+            eyeBtn.textContent = '🙈';
+        } else {
+            input.type = 'password';
+            eyeBtn.textContent = '👁️';
+        }
+    }
+
+    document.getElementById('registerForm').addEventListener('submit', function (e) {
+        let valid = true;
+
+        document.querySelectorAll('.field-error').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('input').forEach(el => el.classList.remove('invalid'));
+
+        const username = document.getElementById('username');
+        const email = document.getElementById('email');
+        const pass = document.getElementById('password');
+        const confirmPass = document.getElementById('confirm_password');
+
+        if (username.value.trim().length < 3) {
+            showFieldError(username, 'username_err');
+            valid = false;
+        }
+
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailPattern.test(email.value.trim())) {
+            showFieldError(email, 'email_err');
+            valid = false;
+        }
+
+        const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+        if (!passwordPattern.test(pass.value)) {
+            showFieldError(pass, 'password_err');
+            valid = false;
+        }
+
+        if (pass.value !== confirmPass.value || !confirmPass.value) {
+            showFieldError(confirmPass, 'confirm_password_err');
+            valid = false;
+        }
+
+        if (!valid) e.preventDefault();
+    });
+
+    function showFieldError(inputEl, errorId) {
+        inputEl.classList.add('invalid');
+        document.getElementById(errorId).style.display = 'block';
+    }
+</script>
 
 </body>
 </html>
